@@ -1,41 +1,51 @@
 use colored::{Color, Colorize};
+use serde::Deserialize;
 use serde_json::{Error, Map, Value};
+use std::{collections::HashMap, io, process::exit};
 use structopt::StructOpt;
-use std::{io, process::exit};
 
 /// Pretty print a stream of json logs.
 #[derive(Debug, StructOpt)]
 struct Opt {
-
-    /// Color scheme to use [chalk, greyscale, ocean, solarized]
-    #[structopt(long, default_value = "chalk")]
+    /// Color scheme to use [chalk, greyscale, ocean, solarized, mocha]
+    #[structopt(long, default_value = "ocean")]
     color_scheme: String,
-
 }
 
 fn main() {
     let opt = Opt::from_args();
-    if let Some(color_palette) = ColorPalette::from_str(&opt.color_scheme) {
-    let format_service = FormatService {
-        colors: color_palette,
-    };
-    let mut buffer = String::new();
+    let color_scheme_yaml = include_str!("color_schemes.yml");
+    let colors_schemes: HashMap<String, ColorScheme> =
+        serde_yaml::from_str(color_scheme_yaml).unwrap();
+    if let Some(color_scheme) = colors_schemes.get(&opt.color_scheme) {
+        let color_palette = ColorPalette::from_color_scheme(color_scheme);
 
-    while let Ok(bytes_read) = io::stdin().read_line(&mut buffer) {
-        if bytes_read == 0 {
-            break;
+        let format_service = FormatService {
+            colors: color_palette,
+        };
+        let mut buffer = String::new();
+
+        while let Ok(bytes_read) = io::stdin().read_line(&mut buffer) {
+            if bytes_read == 0 {
+                break;
+            }
+
+            let output = format_service.format_input(&buffer);
+            println!("{}", output.trim());
+            buffer.clear();
         }
-
-        let output = format_service.format_input(&buffer);
-        println!("{}", output.trim());
-        buffer.clear();
-    }
     } else {
-        println!("{}", format!("Unknown color scheme: {}", opt.color_scheme).red());
+        println!(
+            "{}",
+            format!("Unknown color scheme: {}", opt.color_scheme).red()
+        );
+        let available_schemes: Vec<&str> = colors_schemes.keys().map(|s| s.as_str()).collect();
+        println!("Available color schemes: {}", available_schemes.join(", "));
         exit(1);
     }
 }
 
+#[derive(Debug)]
 struct ColorPalette {
     null: Color,
     bool: Color,
@@ -45,56 +55,41 @@ struct ColorPalette {
 }
 
 impl ColorPalette {
-    fn from_str(palette: &str) -> Option<Self> {
-        match palette {
-            "ocean" => Some(Self::ocean()),
-            "chalk" => Some(Self::chalk()),
-            "greyscale" => Some(Self::greyscale()),
-            "solarized" => Some(Self::solarized()),
-            _ => None,
-        }
-    }
-
-    fn chalk() -> Self {
+    fn from_color_scheme(color_scheme: &ColorScheme) -> Self {
         Self {
-            null: Color::TrueColor {r: 0xdd, g: 0xb2, b: 0x6f},
-            bool: Color::TrueColor {r: 0xe1, g: 0xa3, b: 0xee},
-            number: Color::TrueColor {r: 0x6f, g: 0xc2, b: 0xef},
-            string: Color::TrueColor {r: 0x12, g: 0xcf, b: 0xc0},
-            object_key: Color::TrueColor {r: 0xfb, g: 0x9f, b: 0xb1},
+            null: color_scheme.number.to_true_color(),
+            bool: color_scheme.bool.to_true_color(),
+            number: color_scheme.number.to_true_color(),
+            string: color_scheme.string.to_true_color(),
+            object_key: color_scheme.object_key.to_true_color(),
         }
     }
+}
 
-    fn ocean() -> Self {
-        Self {
-            null: Color::TrueColor {r: 0xbf, g: 0x61, b: 0x6a},
-            bool: Color::TrueColor {r: 0xeb, g: 0xec, b: 0x8b},
-            number: Color::TrueColor {r: 0xa3, g: 0xbe, b: 0x8c},
-            string: Color::TrueColor {r: 0x8f, g: 0xa1, b: 0xb3},
-            object_key: Color::TrueColor {r: 0xb4, g: 0x8e, b: 0xad},
+#[derive(Debug, Deserialize)]
+struct CsColor {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl CsColor {
+    fn to_true_color(&self) -> Color {
+        Color::TrueColor {
+            r: self.r,
+            g: self.g,
+            b: self.b,
         }
     }
+}
 
-    fn greyscale() -> Self {
-        Self {
-            null: Color::TrueColor {r: 0xb9, g: 0xb9, b: 0xb9},
-            bool: Color::TrueColor {r: 0xf7, g: 0xf7, b: 0xf7},
-            number: Color::TrueColor {r: 0x86, g: 0x86, b: 0x86},
-            string: Color::TrueColor {r: 0xa0, g: 0xa0, b: 0xa0},
-            object_key: Color::TrueColor {r: 0x68, g: 0x68, b: 0x68},
-        }
-    }
-
-    fn solarized() -> Self {
-        Self {
-            null: Color::TrueColor {r: 0xdc, g: 0x32, b: 0x2f},
-            bool: Color::TrueColor {r: 0xb5, g: 0x89, b: 0x00},
-            number: Color::TrueColor {r: 0x6c, g: 0x71, b: 0xc4},
-            string: Color::TrueColor {r: 0x26, g: 0x8b, b: 0xd2},
-            object_key: Color::TrueColor {r: 0x2a, g: 0xa1, b: 0x98},
-        }
-
-    }
+#[derive(Debug, Deserialize)]
+struct ColorScheme {
+    null: CsColor,
+    bool: CsColor,
+    number: CsColor,
+    string: CsColor,
+    object_key: CsColor,
 }
 
 struct FormatService {
@@ -121,16 +116,10 @@ impl FormatService {
         }
     }
 
-    fn format_array(&self, values: &Vec<Value>, depth: usize) -> String {
+    fn format_array(&self, values: &[Value], depth: usize) -> String {
         let contents: Vec<String> = values
             .iter()
-            .map(|v| {
-                format!(
-                    "{}{}",
-                    indent(depth),
-                    self.format_json(v, depth)
-                )
-            })
+            .map(|v| format!("{}{}", indent(depth), self.format_json(v, depth)))
             .collect();
 
         format!("[\n{}\n{}]", contents.join(",\n"), indent(depth - 1))
