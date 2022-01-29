@@ -1,4 +1,4 @@
-use colored::{Color, Colorize};
+use owo_colors::OwoColorize;
 use serde::Deserialize;
 use serde_json::{Error, Map, Value};
 use std::{collections::HashMap, io, process::exit};
@@ -18,10 +18,8 @@ fn main() {
     let colors_schemes: HashMap<String, ColorScheme> =
         serde_yaml::from_str(color_scheme_yaml).unwrap();
     if let Some(color_scheme) = colors_schemes.get(&opt.color_scheme) {
-        let color_palette = ColorPalette::from_color_scheme(color_scheme);
-
         let format_service = FormatService {
-            colors: color_palette,
+            colors: color_scheme,
         };
         let mut buffer = String::new();
 
@@ -45,42 +43,11 @@ fn main() {
     }
 }
 
-#[derive(Debug)]
-struct ColorPalette {
-    null: Color,
-    bool: Color,
-    number: Color,
-    string: Color,
-    object_key: Color,
-}
-
-impl ColorPalette {
-    fn from_color_scheme(color_scheme: &ColorScheme) -> Self {
-        Self {
-            null: color_scheme.number.to_true_color(),
-            bool: color_scheme.bool.to_true_color(),
-            number: color_scheme.number.to_true_color(),
-            string: color_scheme.string.to_true_color(),
-            object_key: color_scheme.object_key.to_true_color(),
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct CsColor {
     r: u8,
     g: u8,
     b: u8,
-}
-
-impl CsColor {
-    fn to_true_color(&self) -> Color {
-        Color::TrueColor {
-            r: self.r,
-            g: self.g,
-            b: self.b,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,11 +59,11 @@ struct ColorScheme {
     object_key: CsColor,
 }
 
-struct FormatService {
-    colors: ColorPalette,
+struct FormatService<'a> {
+    colors: &'a ColorScheme,
 }
 
-impl FormatService {
+impl<'a> FormatService<'a> {
     fn format_input(&self, line: &str) -> String {
         let parsed_json: Result<Value, Error> = serde_json::from_str(line);
         match parsed_json {
@@ -107,10 +74,28 @@ impl FormatService {
 
     fn format_json(&self, value: &Value, depth: usize) -> String {
         match value {
-            Value::Null => "null".color(self.colors.null).to_string(),
-            Value::Bool(b) => b.to_string().color(self.colors.bool).to_string(),
-            Value::Number(n) => n.to_string().color(self.colors.number).to_string(),
-            Value::String(s) => format!("\"{}\"", s).color(self.colors.string).to_string(),
+            Value::Null => "null"
+                .truecolor(self.colors.null.r, self.colors.null.g, self.colors.null.b)
+                .to_string(),
+            Value::Bool(b) => b
+                .to_string()
+                .truecolor(self.colors.bool.r, self.colors.bool.g, self.colors.bool.b)
+                .to_string(),
+            Value::Number(n) => n
+                .to_string()
+                .truecolor(
+                    self.colors.number.r,
+                    self.colors.number.g,
+                    self.colors.number.b,
+                )
+                .to_string(),
+            Value::String(s) => format!("\"{}\"", s)
+                .truecolor(
+                    self.colors.string.r,
+                    self.colors.string.g,
+                    self.colors.string.b,
+                )
+                .to_string(),
             Value::Array(a) => self.format_array(a, depth + 1),
             Value::Object(o) => self.format_object(o, depth + 1),
         }
@@ -132,7 +117,11 @@ impl FormatService {
                 format!(
                     "{}{}: {}",
                     indent(depth),
-                    k.color(self.colors.object_key),
+                    k.truecolor(
+                        self.colors.object_key.r,
+                        self.colors.object_key.g,
+                        self.colors.object_key.b
+                    ),
                     self.format_json(v, depth)
                 )
             })
