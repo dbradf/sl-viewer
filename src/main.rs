@@ -1,19 +1,19 @@
+use clap::Parser;
 use owo_colors::OwoColorize;
 use serde::Deserialize;
 use serde_json::{Error, Map, Value};
 use std::{collections::HashMap, io, process::exit};
-use structopt::StructOpt;
 
 /// Pretty print a stream of json logs.
-#[derive(Debug, StructOpt)]
+#[derive(Parser, Debug)]
 struct Opt {
     /// Color scheme to use [chalk, greyscale, ocean, solarized, mocha]
-    #[structopt(long, default_value = "ocean")]
+    #[clap(long, default_value = "ocean")]
     color_scheme: String,
 }
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     let color_scheme_yaml = include_str!("color_schemes.yml");
     let colors_schemes: HashMap<String, ColorScheme> =
         serde_yaml::from_str(color_scheme_yaml).unwrap();
